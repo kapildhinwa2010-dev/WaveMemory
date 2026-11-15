@@ -24,10 +24,14 @@ def hamming_distance(a: np.ndarray, b: np.ndarray) -> int:
 
 
 def noise_pattern(shape, flip_prob: float, rng: np.random.Generator) -> np.ndarray:
-    """Random +/-1 pattern."""
+    """Random +/-1 pattern; ``flip_prob`` is the expected fraction of -1 entries.
+
+    flip_prob=0 -> all +1; flip_prob=1 -> all -1; 0.5 -> unbiased random.
+    """
     if not 0.0 <= flip_prob <= 1.0:
         raise ValueError("flip_prob must be in [0, 1]")
-    return rng.choice(np.array([-1, 1]), size=shape)
+    mask = rng.random(size=shape) < flip_prob
+    return np.where(mask, -1.0, 1.0)
 
 
 class WaveMemory:
@@ -64,14 +68,32 @@ class WaveMemory:
         return self.patterns[int(np.argmax(scores))].copy()
 
     def recall_from_lattice(self, cue: np.ndarray) -> np.ndarray:
-        """Superposed-lattice recall (works even without stored copies)."""
+        """Recall using only the superposed lattice (no stored copies needed).
+
+        Runs Hopfield-style sign dynamics on the lattice energy until stable,
+        then returns the cleaned bipolar state. If stored copies exist, the
+        closest copy is returned instead. With many superposed patterns the
+        lattice recall degrades (cross-talk) - this is a real limitation, not
+        a bug: capacity is roughly dim / (2 * log(n_patterns)).
+        """
         cue = np.asarray(cue, dtype=np.float64).ravel()
         if cue.size != self.dim:
             raise ValueError("cue size must equal dim")
-        if not self.patterns:
+        if not np.any(self.lattice):
             raise ValueError("memory is empty")
-        scores = np.array([float(cue @ p) for p in self.patterns])
-        return self.patterns[int(np.argmax(scores))].copy()
+        # Matched filter against the superposition, then clean up by sign.
+        state = np.sign(cue + self.lattice)
+        state[state == 0] = 1.0
+        for _ in range(8):
+            updated = np.sign(self.lattice * state + cue)
+            updated[updated == 0] = 1.0
+            if np.array_equal(updated, state):
+                break
+            state = updated
+        if self.patterns:
+            scores = [float(state @ p) for p in self.patterns]
+            return self.patterns[int(np.argmax(scores))].copy()
+        return state.copy()
 
     def cleanup(self, noisy: np.ndarray, max_flips: int = 8) -> np.ndarray:
         """Recall and verify; raise if the result is too far from the cue."""
