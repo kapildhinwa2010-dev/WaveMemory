@@ -1,64 +1,57 @@
 # WaveMemory
 
-[![CI](https://github.com/kapildhinwa2010-dev/WaveMemory/actions/workflows/ci.yml/badge.svg)](https://github.com/kapildhinwa2010-dev/WaveMemory/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/kapildhinwa2010-dev/WaveMemory/actions/workflows/codeql.yml/badge.svg)](https://github.com/kapildhinwa2010-dev/WaveMemory/actions/workflows/codeql.yml)
+WaveMemory is a small Python library for storing and recalling bipolar (`-1`/`+1`) patterns. It keeps a one-dimensional sum of written patterns and also retains individual pattern copies for correlation-based recall. The current implementation is minimal; its tests cover basic behavior, not broad capacity or reliability claims.
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+## What is implemented
 
-Wave-lattice associative memory: superposition write, correlation recall, lattice-only recall.
+- `WaveMemory(dim)` initializes an empty memory and rejects dimensions below one.
+- `write(pattern)` validates the flattened pattern size and requires every value to be `-1` or `+1`. It adds the pattern to the lattice and stores a copy. `write_many(patterns)` applies `write` to each supplied pattern.
+- `recall(cue)` returns the stored pattern with the largest dot-product score against the cue. It requires a cue with the configured number of values and a non-empty stored-pattern list.
+- `recall_from_lattice(cue)` performs up to eight element-wise sign updates using the lattice and cue. If stored pattern copies are present, it returns the copy most correlated with the resulting state; if copies have been removed, it returns the computed state. This is a simple one-dimensional heuristic, not a full matrix-based Hopfield network.
+- `cleanup(noisy, max_flips=8)` calls `recall` and raises `ValueError` if the recovered pattern differs from `sign(noisy)` by more than `max_flips * dim // 100` positions. This is a check against the cue, not verification against a known correct pattern.
+- `hamming_distance(a, b)` counts unequal entries and rejects arrays of different shapes.
+- `noise_pattern(shape, flip_prob, rng)` creates a random bipolar pattern in which `flip_prob` is the probability of a negative entry. It does not add noise to a supplied pattern.
 
-**Part of the [Kapildhinwa2010-dev Toolkit](https://github.com/kapildhinwa2010-dev/Kapildhinwa2010-dev).**
+## Requirements
 
-## What it does
+The project metadata requires Python 3.9 or newer and NumPy 1.24 or newer. `requirements.txt` also lists pytest 7.4 or newer for running tests.
 
-WaveMemory stores +/-1 patterns two ways: as copies for direct
-correlation recall (recall()), and superposed into a 1-D lattice for
-recall without stored copies (recall_from_lattice()). cleanup()
-recovers from noisy cues with a flip-tolerance check. The lattice
-dynamics are a heuristic sign-update, and the docstring says so.
+From the repository root, install the declared requirements:
 
-## Install
+```sh
+python -m pip install -r requirements.txt
+```
 
-    pip install -r requirements.txt
+## Example
 
-## Quick start
+Run from the repository root so that `wavememory.py` is importable:
 
-    from wavememory import WaveMemory
+```python
+import numpy as np
+from wavememory import WaveMemory
 
-    mem = WaveMemory(dim=64)
-    mem.write_many([p1, p2])
-    print(mem.recall(noisy_cue))
+memory = WaveMemory(dim=4)
+pattern_a = np.array([1, -1, 1, -1])
+pattern_b = np.array([-1, 1, -1, 1])
+memory.write_many([pattern_a, pattern_b])
 
-## API
+cue = np.array([1, -1, -1, -1])
+recalled = memory.recall(cue)
+print(recalled)
+```
 
-- write / write_many / recall / recall_from_lattice / cleanup
-- noise_pattern(shape, flip_prob, rng) - random +/-1 pattern with the
-  given expected fraction of -1 entries (NOT a noised copy of a given
-  pattern - see Memory-Lib for that variant)
-- hamming_distance(a, b)
+The `wavememory.py` module is a top-level Python module. The repository does not define a command-line interface.
 
-## Honest results and limitations
+## Tests and CI
 
-- recall_from_lattice() degrades fast with pattern count (cross-talk);
-  the docstring quotes a rough capacity of dim / (2 * log(n)) - treat
-  it as an order-of-magnitude hint, not a measured law.
-- When copies exist, recall_from_lattice() falls back to the closest
-  copy - it is only truly copy-free after you manage the pattern list
-  yourself.
-- The lattice dynamics are element-wise sign updates on a 1-D
-  superposition, not a full outer-product Hopfield network (see
-  Memory-Lib / Memory-Research for that).
-- cleanup() judges by distance from the cue sign, not by whether the
-  true pattern was recovered.
+On the checked-out repository commit, the local test command `python -m pytest -q` completed successfully: **16 passed**. The tests cover input validation, exact and selected noisy-cue recall, cleanup, Hamming distance, noise-pattern generation, and lattice recall for a single stored pattern after its stored copy is removed.
 
-## Negative results (from the source experiments)
+`.github/workflows/ci.yml` defines a GitHub Actions test job for Python 3.10, 3.11, and 3.12, including pytest, compilation, and a smoke test. The workflow configuration was inspected, but a remote Actions run for this commit was not verified here.
 
-- The reserv.dean-part-2 log records that carrier-mode recall under
-  heavier noise failed about half the trials; superposition-based
-  designs like this one are the safer direction but still lose
-  reliability quickly as patterns accumulate.
+## Scope and limitations
+
+This repository contains a compact implementation and a small test suite, not measured capacity or benchmark results. Recall from the summed lattice can be affected by interference as patterns accumulate; the code does not establish a numerical capacity guarantee. Lattice updates are element-wise and capped at eight iterations. `recall` and `cleanup` rely on stored copies, and `cleanup` only compares the returned pattern with the cue's sign. The tests do not establish behavior across large pattern sets, extensive noise levels, or production workloads.
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+The repository's `LICENSE` file contains the MIT License. See [LICENSE](LICENSE) for its terms.
